@@ -30,10 +30,6 @@ processed_query = preprocess_text(query_text)
 
 query_embedding = model.encode(processed_query).tolist()
 
-query_filter = Filter(
-    must=[{"key": "label", "match": {"value": 1}}]
-)  # Assuming 1 represents positive sentiment
-
 search_results = client.search(
     collection_name=collection_name,
     query_vector=query_embedding,
