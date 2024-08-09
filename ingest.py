@@ -4,6 +4,9 @@ import pandas as pd
 import string
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
+import pyarrow.parquet as pq
+from qdrant_client.http.models import PointStruct
+
 
 
 logging.basicConfig(level=logging.INFO)
@@ -17,12 +20,11 @@ prefer_grpc = True
 
 # Ingest the training texts only
 # How to extract the text from the dataset
-print(dataset["train"][0]["text"])
+parquet_file = "data_pq"
+batch_size = 256
 
-dataset["train"].to_parquet("data_pq")
+dataset["train"].to_parquet(parquet_file)
 # Create dataframe to manipulate the data
-dataframe = pd.read_parquet("data_pq")
-
 
 # Function to preprocess text
 def preprocess_text(text):
@@ -31,24 +33,13 @@ def preprocess_text(text):
     text = text.translate(str.maketrans("", "", string.punctuation))
     return text
 
-
-dataframe["text"] = dataframe["text"].apply(preprocess_text)
-# print(dataframe.head(10)["text"])
-
-model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-
+embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+model = SentenceTransformer(embedding_model)
 
 def get_embeddings(texts):
     embeddings = model.encode(texts)
     return embeddings
 
-
-texts = dataframe["text"].tolist()
-embeddings = get_embeddings(texts)
-vector_size = embeddings.shape[1]
-
-print(vector_size)
-print(embeddings[0])
 
 client = QdrantClient(host=host, port=port, prefer_grpc=prefer_grpc)
 
@@ -59,7 +50,40 @@ client.create_collection(collection_name)
 
 if collection_name not in client.get_collections():
     client.create_collection(
-        collection_name=collection_name, vector_size=vector_size, distance="Cosine"
+        collection_name=collection_name,
+        vector_size=model.get_sentence_embedding_dimension(),
+        distance="Cosine",
     )
     
-    
+# Ingest the data
+
+def read_parquet_in_batches(parquet_file, batch_size=128):
+    parquet_file = pq.ParquetFile(parquet_file)
+    for batch in parquet_file.iter_batches(batch_size=batch_size):
+        df = batch.to_pandas()
+        df = df["text"].apply(preprocess_text)
+        yield df
+
+def upsert_data_in_batches(parquet_file, batch_size):
+    for batch_index, batch_df in enumerate(read_parquet_in_batches(parquet_file, batch_size)):
+        texts = batch_df['text'].tolist()
+        labels = batch_df['labels'].tolist()
+        embeddings = get_embeddings(texts)
+        
+        # Prepare points for insertion
+        points = [
+            PointStruct(
+                id=batch_index * batch_size + i,
+                vector=embedding.tolist(),
+                payload={'text': text, 'label': label}
+            )
+            for i, (embedding, text, label) in enumerate(zip(embeddings, texts, labels))
+        ]
+        
+        # Upsert points into Qdrant
+        client.upsert(collection_name=collection_name, points=points)
+
+# Call the function to start the upsert process
+upsert_data_in_batches(parquet_file, batch_size)
+
+print("Data ingested into Qdrant.")
