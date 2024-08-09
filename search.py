@@ -24,7 +24,7 @@ embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
 model = SentenceTransformer(embedding_model)
 
 
-query_text = "I am really happy with this app"
+query_text = input("Please enter your query: ")
 
 processed_query = preprocess_text(query_text)
 
