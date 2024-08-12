@@ -75,7 +75,7 @@ def upsert_data_in_batches(parquet_file, batch_size):
         labels = batch_df["labels"].tolist()
         embeddings = get_embeddings(texts)
 
-        # Prepare points for insertion
+        # Points to insert into qdrant
         points = [
             PointStruct(
                 id=batch_index * batch_size + i,
@@ -85,11 +85,9 @@ def upsert_data_in_batches(parquet_file, batch_size):
             for i, (embedding, text, label) in enumerate(zip(embeddings, texts, labels))
         ]
 
-        # Upsert points into Qdrant
         client.upsert(collection_name=collection_name, points=points)
 
 
-# Call the function to start the upsert process
 upsert_data_in_batches(parquet_file, batch_size)
 
 print("Data ingested into Qdrant.")
