@@ -23,21 +23,25 @@ def preprocess_text(text):
 embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
 model = SentenceTransformer(embedding_model)
 
-
 query_text = input("Please enter your query: ")
 
 processed_query = preprocess_text(query_text)
 
 query_embedding = model.encode(processed_query).tolist()
 
+query_filter = Filter(
+    must=[{"key": "label", "match": {"value": 4}}]
+)  # Value between 0-4
+
+# Search for similar vectors
 search_results = client.search(
     collection_name=collection_name,
     query_vector=query_embedding,
-    # filter=query_filter,
-    limit=5,  # Number of results to return
-    score_threshold=0.7,  # Minimum score for results
+    query_filter=query_filter,
+    limit=5,  
+    score_threshold=0.7,  
 )
 
-# Display search results
+# Display results
 for result in search_results:
     print(f"ID: {result.id}, Score: {result.score}, Payload: {result.payload}")
